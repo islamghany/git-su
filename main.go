@@ -151,7 +151,6 @@ func handleSwitchUser() error {
 	if !ok {
 		return errUserIdNotFound
 	}
-	var err error
 	if user.Email != "" {
 		cmd := exec.Command("git", "config", "--global", "user.email", user.Email)
 		output, err := cmd.Output()
@@ -160,7 +159,7 @@ func handleSwitchUser() error {
 		}
 		fmt.Println(string(output))
 	}
-	if user.Name != "" && err == nil {
+	if user.Name != "" {
 		cmd := exec.Command("git", "config", "--global", "user.name", user.Name)
 		output, err := cmd.Output()
 		if err != nil {
@@ -203,6 +202,7 @@ func main() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
+	fileHanlder = fileio.NewFileIO()
 	err = getExistedUsers()
 	if err != nil {
 		if err == errNotFound {
@@ -214,7 +214,6 @@ func main() {
 	}
 
 	var eventialError error
-	fileHanlder = fileio.NewFileIO()
 	switch command {
 	case "add":
 		eventialError = handleAddNewUser()
