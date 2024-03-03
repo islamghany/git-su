@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/islamghany/git-su/fileio"
+	"github.com/islamghany/git-su/store"
 )
 
 // //////////////////////////// Types ////////////////////////////////
@@ -24,13 +26,16 @@ type Options struct {
 type UsersKeys map[string]User
 
 // //////////////////////////// Global Variables ////////////////////////////////
-const usersFileName = ".git-su-users.json"
+
+// global pathname to the file that stores the users
+const usersFileName = ".git-su-users.store"
 
 var errNotFound error = errors.New("file not found")
 var errUserIdNotFound error = errors.New("user id not found")
 var fileHanlder *fileio.FileIO
 var users UsersKeys
 var options Options
+var s *store.Store
 
 // //////////////////////////// Helper Functions ////////////////////////////////
 // parseArgs parses the command line arguments and sets the options
@@ -72,35 +77,6 @@ func getExistedUsers() error {
 
 }
 
-// addUser adds a new user to the users global variable
-func addUser(id string, email string, name string) {
-	users[id] = User{
-		Email: email,
-		Name:  name,
-	}
-}
-
-// removeUser removes a user from the users global variable
-func removeUser(id string) {
-	_, ok := users[id]
-	if ok {
-		delete(users, id)
-	}
-}
-
-// persistUsers writes the users global variable to the file
-func persistUsers() error {
-	usersBytes, err := json.Marshal(users)
-	if err != nil {
-		return err
-	}
-	err = fileHanlder.WriteToFile(usersFileName, usersBytes)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
 ////////////////////////////// Main Functions ////////////////////////////////
 
 // git-su add -id=<id> -email=<email> -name=<name>
@@ -114,8 +90,8 @@ func handleAddNewUser() error {
 	if options.name == "" {
 		return errors.New("name is required")
 	}
-	addUser(options.id, options.email, options.name)
-	err := persistUsers()
+	s.AddUser(options.id, store.User{Email: options.email, Name: options.name})
+	err := s.Save()
 	if err != nil {
 		return err
 	}
@@ -127,16 +103,15 @@ func handleRemoveUser() error {
 	if options.id == "" {
 		return errors.New("id is required")
 	}
-	removeUser(options.id)
-	err := persistUsers()
-	if err != nil {
-		return err
-	}
+
+	s.RemoveUser(options.id)
+
 	return nil
 }
 
 // git-su list
 func handleListUsers() {
+	users := s.ListUsers()
 	for id, user := range users {
 		fmt.Printf("%s: name=%s email=%s\n", id, user.Name, user.Email)
 	}
@@ -147,8 +122,8 @@ func handleSwitchUser() error {
 	if options.id == "" {
 		return errors.New("id is required")
 	}
-	user, ok := users[options.id]
-	if !ok {
+	user, err := s.GetUser(options.id)
+	if err != nil {
 		return errUserIdNotFound
 	}
 	if user.Email != "" {
@@ -202,29 +177,30 @@ func main() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	fileHanlder = fileio.NewFileIO()
-	err = getExistedUsers()
+	// Get the directory where the CLI executable is located
+	exeDir, err := os.Executable()
 	if err != nil {
-		if err == errNotFound {
-			users = UsersKeys{}
-		} else {
-			fmt.Println(err)
-			os.Exit(1)
-		}
+		fmt.Println("Error:", err)
+		return
+	}
+	exeDir = filepath.Dir(exeDir)
+	// Define the path to the global file
+	usersFileName := filepath.Join(exeDir, usersFileName)
+	s, err = store.FromFile(usersFileName)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
 	}
 
 	var eventialError error
 	switch command {
 	case "add":
 		eventialError = handleAddNewUser()
-	case "remove":
-	case "rm":
+	case "remove", "rm":
 		eventialError = handleRemoveUser()
-	case "list":
-	case "ls":
+	case "list", "ls":
 		handleListUsers()
-	case "-h":
-	case "--help":
+	case "-h", "--help":
 		handleHelp()
 	case "which":
 		handleWhichUser()
